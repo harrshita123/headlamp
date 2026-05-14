@@ -18,6 +18,7 @@ func TestHTTPGet(t *testing.T) {
 		statusCode int
 		body       string
 		wantErr    bool
+		wantStatus int
 	}{
 		{
 			name:       "valid URL",
@@ -25,6 +26,7 @@ func TestHTTPGet(t *testing.T) {
 			statusCode: http.StatusOK,
 			body:       "Hello, World!",
 			wantErr:    false,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "invalid URL",
@@ -38,34 +40,20 @@ func TestHTTPGet(t *testing.T) {
 			url:        "http://example.com/error",
 			statusCode: http.StatusInternalServerError,
 			body:       "",
-			wantErr:    true,
-		},
-		{
-			name:       "context cancellation",
-			url:        "http://example.com/cancel",
-			statusCode: http.StatusOK,
-			body:       "Hello, World!",
-			wantErr:    true,
+			wantErr:    false,
+			wantStatus: http.StatusInternalServerError,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch {
-				case tt.url == "http://example.com/error":
-					w.WriteHeader(http.StatusInternalServerError)
-				case tt.name == "context cancellation":
-					<-r.Context().Done()
-					w.WriteHeader(http.StatusOK)
+				if tt.statusCode != 0 {
+					w.WriteHeader(tt.statusCode)
+				}
 
-					if _, err := w.Write([]byte(tt.body)); err != nil {
-						t.Fatal(err)
-					}
-				default:
-					if _, err := w.Write([]byte(tt.body)); err != nil {
-						t.Fatalf("write test: %v", err)
-					}
+				if _, err := w.Write([]byte(tt.body)); err != nil {
+					t.Fatalf("write test: %v", err)
 				}
 			}))
 			defer ts.Close()
@@ -78,22 +66,39 @@ func TestHTTPGet(t *testing.T) {
 				url = ts.URL + "/error"
 			}
 
-			if ctx := context.Background(); tt.name == "context cancellation" {
-				var cancel context.CancelFunc
-
-				_, cancel = context.WithCancel(ctx)
-				cancel()
-			}
-
 			resp, err := serviceproxy.HTTPGet(context.Background(), url)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("HTTPGet() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			if !tt.wantErr && string(resp) != tt.body {
-				t.Errorf("HTTPGet() response = %s, want %s", resp, tt.body)
+			if !tt.wantErr && string(resp.Body) != tt.body {
+				t.Errorf("HTTPGet() response = %s, want %s", resp.Body, tt.body)
+			}
+
+			if !tt.wantErr && resp.StatusCode != tt.wantStatus {
+				t.Errorf("HTTPGet() status = %d, want %d", resp.StatusCode, tt.wantStatus)
 			}
 		})
+	}
+}
+
+func TestHTTPGetContextCancellation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		w.WriteHeader(http.StatusOK)
+
+		if _, err := w.Write([]byte("Hello, World!")); err != nil {
+			t.Fatalf("write test: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := serviceproxy.HTTPGet(ctx, ts.URL)
+	if err == nil {
+		t.Errorf("HTTPGet() error = nil, want error")
 	}
 }
 

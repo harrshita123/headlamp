@@ -11,7 +11,7 @@ import (
 // ServiceConnection represents a connection to a service.
 type ServiceConnection interface {
 	// Get - perform a get request and return the response
-	Get(string) ([]byte, error)
+	Get(context.Context, string) (*UpstreamResponse, error)
 }
 type Connection struct {
 	URI string
@@ -26,7 +26,7 @@ func NewConnection(ps *proxyService) ServiceConnection {
 
 // Get sends a GET request to the specified URI.
 
-func (c *Connection) Get(requestURI string) ([]byte, error) {
+func (c *Connection) Get(ctx context.Context, requestURI string) (*UpstreamResponse, error) {
 	base, err := url.Parse(c.URI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid host uri: %w", err)
@@ -52,10 +52,10 @@ func (c *Connection) Get(requestURI string) ([]byte, error) {
 
 	fullURL := base.ResolveReference(rel)
 
-	body, err := HTTPGet(context.Background(), fullURL.String())
+	resp, err := HTTPGet(ctx, fullURL.String())
 	if err != nil {
 		return nil, err
 	}
 
-	return body, nil
+	return resp, nil
 }

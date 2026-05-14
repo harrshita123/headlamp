@@ -10,8 +10,15 @@ import (
 	"github.com/kubernetes-sigs/headlamp/backend/pkg/logger"
 )
 
+// UpstreamResponse contains the upstream service response data forwarded by the proxy.
+type UpstreamResponse struct {
+	StatusCode  int
+	ContentType string
+	Body        []byte
+}
+
 // HTTPGet sends an HTTP GET request to the specified URI.
-func HTTPGet(ctx context.Context, uri string) ([]byte, error) {
+func HTTPGet(ctx context.Context, uri string) (*UpstreamResponse, error) {
 	cli := &http.Client{Timeout: 10 * time.Second}
 
 	logger.Log(logger.LevelInfo, nil, nil, fmt.Sprintf("make request to %s", uri))
@@ -28,14 +35,14 @@ func HTTPGet(ctx context.Context, uri string) ([]byte, error) {
 
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed HTTP GET, status code %v", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	return body, nil
+	return &UpstreamResponse{
+		StatusCode:  resp.StatusCode,
+		ContentType: resp.Header.Get("Content-Type"),
+		Body:        body,
+	}, nil
 }

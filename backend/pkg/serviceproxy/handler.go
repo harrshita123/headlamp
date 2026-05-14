@@ -19,7 +19,7 @@ import (
 func RequestHandler(kubeConfigStore kubeconfig.ContextStore, w http.ResponseWriter, r *http.Request) {
 	clusterName, namespace, name, requestURI := parseInfoFromRequest(r)
 
-	defer disableResponseCaching(w)
+	disableResponseCaching(w)
 	// Get the context
 	ctx, err := kubeConfigStore.GetContext(clusterName)
 	if err != nil {
@@ -56,7 +56,7 @@ func RequestHandler(kubeConfigStore kubeconfig.ContextStore, w http.ResponseWrit
 	// Get a service connection object and make the request
 	conn := NewConnection(ps)
 
-	handleServiceProxy(conn, requestURI, w)
+	handleServiceProxy(r.Context(), conn, requestURI, w)
 }
 
 func parseInfoFromRequest(r *http.Request) (string, string, string, string) {
@@ -111,8 +111,8 @@ func disableResponseCaching(w http.ResponseWriter) {
 	w.Header().Set("X-Accel-Expires", "0")
 }
 
-func handleServiceProxy(conn ServiceConnection, requestURI string, w http.ResponseWriter) {
-	resp, err := conn.Get(requestURI)
+func handleServiceProxy(ctx context.Context, conn ServiceConnection, requestURI string, w http.ResponseWriter) {
+	resp, err := conn.Get(ctx, requestURI)
 	if err != nil {
 		logger.Log(logger.LevelError, nil, err, "service get request failed")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -120,10 +120,15 @@ func handleServiceProxy(conn ServiceConnection, requestURI string, w http.Respon
 		return
 	}
 
-	_, err = w.Write(resp) //nolint:gosec
+	if resp.ContentType != "" {
+		w.Header().Set("Content-Type", resp.ContentType)
+	}
+
+	w.WriteHeader(resp.StatusCode)
+
+	_, err = w.Write(resp.Body) //nolint:gosec
 	if err != nil {
 		logger.Log(logger.LevelError, nil, err, "writing response")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
