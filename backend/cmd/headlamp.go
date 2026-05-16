@@ -65,6 +65,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -2707,8 +2708,7 @@ func (c *HeadlampConfig) drainNode(clientset kubernetes.Interface, nodeName stri
 		var deleteErrors []string
 
 		for _, pod := range pods.Items {
-			// ignore daemonsets
-			if pod.Labels["kubernetes.io/created-by"] == "daemonset-controller" {
+			if isDaemonSetPod(pod) {
 				continue
 			}
 
@@ -2729,6 +2729,22 @@ func (c *HeadlampConfig) drainNode(clientset kubernetes.Interface, nodeName stri
 			_ = c.Cache.SetWithTTL(ctx, cacheKey, "success", cacheItemTTL)
 		}
 	}()
+}
+
+// isDaemonSetPod reports whether pod should be treated as managed by a DaemonSet.
+// It supports both the legacy daemonset-controller label and modern owner references.
+func isDaemonSetPod(pod corev1.Pod) bool {
+	if pod.Labels["kubernetes.io/created-by"] == "daemonset-controller" {
+		return true
+	}
+
+	for _, owner := range pod.OwnerReferences {
+		if owner.Kind == "DaemonSet" && (owner.APIVersion == "" || strings.HasPrefix(owner.APIVersion, "apps/")) {
+			return true
+		}
+	}
+
+	return false
 }
 
 /*
