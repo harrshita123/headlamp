@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1404,6 +1405,38 @@ func TestGetOidcCallbackURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerateOidcState(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		state, err := generateOidcState(func(b []byte) (int, error) {
+			for i := range b {
+				b[i] = byte(i)
+			}
+
+			return len(b), nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", state)
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		state, err := generateOidcState(func([]byte) (int, error) {
+			return 0, errors.New("rand failure")
+		})
+
+		require.Error(t, err)
+		assert.Empty(t, state)
+	})
+
+	t.Run("short read", func(t *testing.T) {
+		state, err := generateOidcState(func([]byte) (int, error) {
+			return 31, nil
+		})
+
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+		assert.Empty(t, state)
+	})
 }
 
 func TestOIDCTokenRefreshMiddleware(t *testing.T) {

@@ -1148,6 +1148,21 @@ func isLoopbackAddr(addr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+func generateOidcState(read func([]byte) (int, error)) (string, error) {
+	b := make([]byte, 32)
+
+	n, err := read(b)
+	if err != nil {
+		return "", err
+	}
+
+	if n != len(b) {
+		return "", io.ErrUnexpectedEOF
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
 // allowedHosts returns the set of normalized host values that are considered
 // valid for the given listen address and port. All entries are lowercased and
 // host:port pairs are built with net.JoinHostPort so that IPv6 literals are
