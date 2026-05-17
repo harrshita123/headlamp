@@ -142,12 +142,32 @@ func TestParseKubeConfigInvalidJSONReturnsBadRequest(t *testing.T) {
 	)
 	req.Header.Set("X-HEADLAMP_BACKEND-TOKEN", token)
 
-	resp := httptest.NewRecorder()
+	resp := &writeCountingResponseRecorder{ResponseRecorder: httptest.NewRecorder()}
 	handler.ServeHTTP(resp, req)
 
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Equal(t, 1, resp.writeHeaderCount)
+	assert.Equal(t, 1, resp.writeCount)
+	assert.Equal(t, "text/plain; charset=utf-8", resp.Header().Get("Content-Type"))
 	assert.Equal(t, "Invalid JSON request body\n", resp.Body.String())
 	assert.NotContains(t, resp.Body.String(), "clusters")
+}
+
+type writeCountingResponseRecorder struct {
+	*httptest.ResponseRecorder
+	writeCount       int
+	writeHeaderCount int
+}
+
+func (r *writeCountingResponseRecorder) Write(b []byte) (int, error) {
+	r.writeCount++
+
+	return r.ResponseRecorder.Write(b)
+}
+
+func (r *writeCountingResponseRecorder) WriteHeader(code int) {
+	r.writeHeaderCount++
+	r.ResponseRecorder.WriteHeader(code)
 }
 
 func TestParseKubeConfigRequiresKubeconfigs(t *testing.T) {
